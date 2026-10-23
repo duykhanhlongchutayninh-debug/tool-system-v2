@@ -39,6 +39,8 @@ class CloudCheckpoint:
         self.url = (url or os.getenv("TOOL_SYSTEM_SUPABASE_URL") or PROJECT_URL).rstrip("/")
         if not self.url:
             raise CheckpointError("TOOL_SYSTEM_SUPABASE_URL_MISSING")
+        if not self.url:
+            raise CheckpointError("TOOL_SYSTEM_SUPABASE_URL_MISSING")
         # Wrong-project protection: never write to old money-agent-ai instance.
         if self.url != PROJECT_URL:
             raise CheckpointError("WRONG_SUPABASE_PROJECT")

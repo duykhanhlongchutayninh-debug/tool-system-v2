@@ -1,1 +1,6 @@
+requests>=2.31,<3
 playwright>=1.48,<2
+cryptography>=43,<48
+Pillow>=10,<13
+yt-dlp>=2024.1
+pytest>=8,<10
