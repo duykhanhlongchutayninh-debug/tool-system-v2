@@ -13,14 +13,14 @@ ROOT = next(
     Path("/usr/share/novnc"),
 )
 PAGE = ROOT / "vnc.html"
-PATCH = ROOT / "app" / "money_ai_proxy_path.js"
-BACKUP = ROOT / "vnc.html.money-ai-original"
+PATCH = ROOT / "app" / "tool_system_proxy_path.js"
+BACKUP = ROOT / "vnc.html.tool-system-v2-original"
 GESTURE = ROOT / "core" / "input" / "gesturehandler.js"
-GESTURE_BACKUP = ROOT / "core" / "input" / "gesturehandler.js.money-ai-original"
+GESTURE_BACKUP = ROOT / "core" / "input" / "gesturehandler.js.tool-system-v2-original"
 UI_FILE = ROOT / "app" / "ui.js"
-UI_BACKUP = ROOT / "app" / "ui.js.money-ai-original"
-UI_GUARD = "MONEY_AI_MOBILE_PAN_MODE"
-GESTURE_GUARD = "MONEY_AI_IGNORE_UNTRACKED_TOUCH_END"
+UI_BACKUP = ROOT / "app" / "ui.js.tool-system-v2-original"
+UI_GUARD = "TOOL_SYSTEM_MOBILE_PAN_MODE"
+GESTURE_GUARD = "TOOL_SYSTEM_IGNORE_UNTRACKED_TOUCH_END"
 TOUCH_END_UNGUARDED = """            let touch = this._tracked.find(t => t.id === id);
             touch.active = false;"""
 TOUCH_END_RE = re.compile(
@@ -28,11 +28,11 @@ TOUCH_END_RE = re.compile(
     r"\s*t\s*=>\s*t\.id\s*===\s*id\s*\);"
     r"\s*touch\.active\s*=\s*false;"
 )
-LEGACY_MARKER = '<script src="app/money_ai_proxy_path.js"></script>'
-MARKER = '<script src="app/money_ai_proxy_path.js?v=3"></script>'
-PROXY_SCRIPT_RE = re.compile(r'<script src="app/money_ai_proxy_path\.js(?:\?v=\d+)?"></script>')
+LEGACY_MARKER = '<script src="app/tool_system_proxy_path.js"></script>'
+MARKER = '<script src="app/tool_system_proxy_path.js?v=3"></script>'
+PROXY_SCRIPT_RE = re.compile(r'<script src="app/tool_system_proxy_path\.js(?:\?v=\d+)?"></script>')
 
-JS = r"""// Money AI: correct noVNC WebSocket URL for Kaggle's authenticated proxy.
+JS = r"""// Tool System V2: correct noVNC WebSocket URL for Kaggle's authenticated proxy.
 // Always replace stale ?path=... from a previous Kaggle session/tab.
 // Older noVNC builds form wss://HOST/ + path (ignoring the HTML base path).
 (function () {
@@ -69,7 +69,7 @@ def _patch_gesture_handler() -> None:
         indent + "// MOBILE SAFETY: stale touchend can arrive after gesture state reset.",
         indent + "// Ignore the untracked touch instead of crashing the noVNC UI.",
         indent + "if (touch === undefined) {",
-        indent + "    return; // MONEY_AI_IGNORE_UNTRACKED_TOUCH_END",
+        indent + "    return; // TOOL_SYSTEM_IGNORE_UNTRACKED_TOUCH_END",
         indent + "}",
         indent + "touch.active = false;",
     ))
@@ -94,7 +94,7 @@ def _patch_mobile_viewport() -> None:
         "UI.rfb.scaleViewport = !" + touch_expr
         + " && UI.getSetting('resize') === 'scale';"
     )
-    marked_scale_line = mobile_scale_line + " // MONEY_AI_MOBILE_PAN_MODE"
+    marked_scale_line = mobile_scale_line + " // TOOL_SYSTEM_MOBILE_PAN_MODE"
     scaling_line = (
         "const scaling = UI.getSetting('resize') === 'scale' && !" + touch_expr + ";"
     )
@@ -105,7 +105,7 @@ def _patch_mobile_viewport() -> None:
 
 /* ------^-------
  * /VIEW CLIPPING"""
-    replacement_view = """        // Money AI: on touch screens, keep the desktop at native resolution
+    replacement_view = """        // Tool System V2: on touch screens, keep the desktop at native resolution
         // and allow panning instead of calling a noVNC-specific touch helper.
         if ((navigator.maxTouchPoints || 0) > 0 || ('ontouchstart' in window)) {
             UI.rfb.clipViewport = true;
@@ -147,7 +147,7 @@ def _patch_mobile_viewport() -> None:
                 re.compile(
                     r"UI\.rfb\.scaleViewport\s*=\s*!\s*\(?\s*isTouchDevice\(\)\s*\)?"
                     r"\s*&&\s*UI\.getSetting\('resize'\)\s*===\s*'scale';"
-                    r"\s*//\s*MONEY_AI_MOBILE_PAN_MODE"
+                    r"\s*//\s*TOOL_SYSTEM_MOBILE_PAN_MODE"
                 ),
                 re.compile(
                     r"UI\.rfb\.scaleViewport\s*=\s*!\s*\(?\s*isTouchDevice\(\)\s*\)?"
@@ -166,7 +166,7 @@ def _patch_mobile_viewport() -> None:
                 "const scaling = UI.getSetting('resize') === 'scale' && !isTouchDevice();",
                 "const scaling = UI.getSetting('resize') === 'scale';",
             )
-            old_view = """        // Money AI: mobile view pans the desktop at native resolution.
+            old_view = """        // Tool System V2: mobile view pans the desktop at native resolution.
         if (isTouchDevice()) {
             UI.rfb.clipViewport = true;
             UI.rfb.dragViewport = true;
@@ -184,7 +184,7 @@ def _patch_mobile_viewport() -> None:
             # Also recognize the newer block variant and any stale marker that
             # remained after a partial prior write.
             source = source.replace(marked_scale_line, scale_line := "UI.rfb.scaleViewport = UI.getSetting('resize') === 'scale';")
-            source = source.replace(" // MONEY_AI_MOBILE_PAN_MODE", "")
+            source = source.replace(" // TOOL_SYSTEM_MOBILE_PAN_MODE", "")
             if UI_GUARD in source:
                 raise RuntimeError("NOVNC_UI_PARTIAL_PATCH_LAYOUT_UNKNOWN")
             recovered = source
@@ -279,7 +279,7 @@ def main() -> None:
 
     current_page = PAGE.read_text(encoding="utf-8")
     assert MARKER in current_page
-    assert current_page.count("money_ai_proxy_path.js") == 1
+    assert current_page.count("tool_system_proxy_path.js") == 1
     _patch_gesture_handler()
     _patch_mobile_viewport()
     print("NOVNC_PROXY_PATH_FIX_READY")
