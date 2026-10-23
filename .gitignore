@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+*.log
+artifacts/
+downloads/
+chrome-profile/
+.session/
+.pytest_cache/
+.coverage
