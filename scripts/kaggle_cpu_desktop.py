@@ -18,7 +18,7 @@ import time
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import urlopen
 
-WORKDIR = Path(os.environ.get("TOOL_SYSTEM_HOME", "/kaggle/working/tool-system-v2-runtime"))
+WORKDIR = Path(os.environ.get("MONEY_AI_HOME", "/kaggle/working/money-ai"))
 DISPLAY = ":99"
 CDP = "http://127.0.0.1:9222"
 SCREEN = "http://127.0.0.1:6080/vnc.html"
@@ -146,7 +146,7 @@ def _chrome_binary() -> str:
     # A kernel/session reset can delete Playwright browser cache while keeping
     # the Python package; restore only the required browser, not Chromium deps,
     # Xvfb, VNC, profile, GitHub updater, or Supabase setup.
-    print("TOOL_SYSTEM_CHROMIUM_MISSING: installing full Chromium once", flush=True)
+    print("MONEY_AI_CHROMIUM_MISSING: installing full Chromium once", flush=True)
     # Prefer /kaggle/working for repeated kernel runs instead of ephemeral
     # /root/.cache. This is not guaranteed durable across Kaggle sessions.
     browser_dir = WORKDIR / "playwright-browsers"
@@ -177,7 +177,7 @@ def _chrome_binary() -> str:
         raise RuntimeError(
             "CHROMIUM_INSTALLED_BUT_NOT_FOUND: check logs/chrome_install.log"
         )
-    print("TOOL_SYSTEM_CHROMIUM_READY", flush=True)
+    print("MONEY_AI_CHROMIUM_READY", flush=True)
     return found
 
 
@@ -212,7 +212,7 @@ def _ensure_chromium_dependencies(chrome: str) -> None:
     missing = _missing_chrome_libraries(chrome)
     if not missing:
         return
-    print("TOOL_SYSTEM_CHROME_MISSING_LIBRARIES:", ", ".join(missing), flush=True)
+    print("MONEY_AI_CHROME_MISSING_LIBRARIES:", ", ".join(missing), flush=True)
     if os.geteuid() != 0:
         raise RuntimeError("CHROMIUM_OS_DEPS_NEED_ROOT: cannot install in this Kaggle session")
     # Persist a failure sentinel in Kaggle workdir so failed package commands
@@ -223,7 +223,7 @@ def _ensure_chromium_dependencies(chrome: str) -> None:
         raise RuntimeError("CHROMIUM_OS_DEPS_PREVIOUS_ATTEMPT_FAILED: inspect chrome_deps.log")
     log = WORKDIR / "logs" / "chrome_deps.log"
     log.parent.mkdir(parents=True, exist_ok=True)
-    print("TOOL_SYSTEM_CHROME_INSTALLING_SYSTEM_DEPS", flush=True)
+    print("MONEY_AI_CHROME_INSTALLING_SYSTEM_DEPS", flush=True)
     with log.open("ab") as output:
         try:
             result = subprocess.run(
@@ -248,11 +248,14 @@ def _ensure_chromium_dependencies(chrome: str) -> None:
             "CHROMIUM_OS_DEPS_STILL_MISSING: " + ", ".join(remaining)
         )
     stamp.unlink(missing_ok=True)
-    print("TOOL_SYSTEM_CHROME_SYSTEM_DEPS_READY", flush=True)
+    print("MONEY_AI_CHROME_SYSTEM_DEPS_READY", flush=True)
 
 
 def _profile_dir() -> Path:
-    """Use only Tool System V2's own profile; never touch Money AI's profile."""
+    """Prioritize the original owner's actual Playwright profile; do not switch."""
+    previous = Path("/kaggle/working/money_ai_chrome_profile")
+    if previous.is_dir():
+        return previous
     return WORKDIR / "chrome_profile"
 
 
@@ -290,7 +293,7 @@ def _process_command_line(pid: int) -> list[str]:
 def _verified_running_chrome_profile(session_file: Path) -> tuple[Path, int]:
     """Prove the existing CDP owner and return the profile it actually uses.
 
-    session.json records which process Tool System V2 started. A preferred profile
+    session.json records which process Money AI started. A preferred profile
     directory can change after a restore; that must not make us start a second
     Chrome or discard the current login. Trust only the recorded PID when it
     is still a live Chromium process whose argv explicitly owns CDP 9222 and
@@ -416,9 +419,9 @@ def _ensure_viewer_dependencies() -> None:
     """
     missing = _missing_viewer_packages()
     if not missing:
-        print("TOOL_SYSTEM_VIEWER_DEPENDENCIES_READY", flush=True)
+        print("MONEY_AI_VIEWER_DEPENDENCIES_READY", flush=True)
         return
-    print("TOOL_SYSTEM_VIEWER_MISSING:", ", ".join(missing), flush=True)
+    print("MONEY_AI_VIEWER_MISSING:", ", ".join(missing), flush=True)
     if os.geteuid() != 0:
         raise RuntimeError("VIEWER_PACKAGES_REQUIRE_ROOT: do not reinstall Chrome")
     apt = shutil.which("apt-get")
@@ -432,7 +435,7 @@ def _ensure_viewer_dependencies() -> None:
         raise RuntimeError("VIEWER_PACKAGES_PREVIOUS_ATTEMPT_FAILED: inspect viewer_install.log")
     env = _safe_child_env()
     env["DEBIAN_FRONTEND"] = "noninteractive"
-    print("TOOL_SYSTEM_VIEWER_INSTALLING_DEPENDENCIES", flush=True)
+    print("MONEY_AI_VIEWER_INSTALLING_DEPENDENCIES", flush=True)
     with (logs / "viewer_install.log").open("ab") as log:
         for cmd, timeout in (
             ([apt, "-qq", "update"], 240),
@@ -459,7 +462,7 @@ def _ensure_viewer_dependencies() -> None:
         failed.write_text("|".join(remaining), encoding="utf-8")
         raise RuntimeError("VIEWER_PACKAGES_STILL_MISSING: " + ", ".join(remaining))
     failed.unlink(missing_ok=True)
-    print("TOOL_SYSTEM_VIEWER_DEPENDENCIES_READY", flush=True)
+    print("MONEY_AI_VIEWER_DEPENDENCIES_READY", flush=True)
 
 
 def _patch_novnc_proxy() -> None:
@@ -498,7 +501,7 @@ def _await_browser_cdp(process: subprocess.Popen, seconds: int = 40) -> None:
 
 
 def start() -> dict:
-    """Idempotent: reuse only a recorded local CDP Chrome; refuse unknown instances."""
+    """Idempotent; never launches a second Chrome if another owns the CDP port."""
     if not Path('/kaggle').exists():
         raise RuntimeError("KAGGLE_ONLY: run this on the existing Kaggle CPU notebook")
     WORKDIR.mkdir(parents=True, exist_ok=True)
@@ -506,11 +509,27 @@ def start() -> dict:
     logs = WORKDIR / "logs"
     logs.mkdir(exist_ok=True)
     profile = _profile_dir()
-    if profile.exists() and any(profile.iterdir()):
-        profile_restore = "LOCAL_PROFILE_PRESENT_NOT_LOGIN_VERIFIED"
-    else:
-        profile_restore = "NEW_LOCAL_PROFILE_NO_CLOUD_RESTORE"
-    print("TOOL_SYSTEM_PROFILE_STATE=" + profile_restore, flush=True)
+    profile_restore = "LOCAL_PROFILE_REUSED"
+    # Restore credentials BEFORE spawning the only Chrome, never while it runs.
+    # An empty Kaggle profile without cloud credentials is NOT proof there is
+    # no backup: refuse a silently logged-out replacement session.
+    if not _port_open(9222) and not _chromium_processes():
+        source_root = str(Path(__file__).resolve().parents[1] / "src")
+        if source_root not in sys.path:
+            sys.path.insert(0, source_root)
+        from money_ai.chrome_vault import ChromeVault, profile_initialized
+        if not profile_initialized(profile):
+            if profile.exists() and any(profile.iterdir()):
+                raise RuntimeError(
+                    "CHROME_LOCAL_PROFILE_INCOMPLETE: preserve existing files; "
+                    "do not overwrite or start a second Chrome")
+            if not os.environ.get("MONEY_AI_SUPABASE_SERVICE_ROLE_KEY"):
+                raise RuntimeError(
+                    "CHROME_VAULT_KEY_REQUIRED: activate existing Money AI Supabase "
+                    "in this Kaggle kernel before launching a fresh Chrome")
+            restored = ChromeVault().restore(profile)
+            profile_restore = "CLOUD_VERIFIED" if restored else "NO_CLOUD_BACKUP_YET"
+            print("MONEY_AI_CHROME_PROFILE_RESTORE=" + profile_restore, flush=True)
     meta = WORKDIR / "session.json"
 
     # The Jupyter kernel may have been restarted with DISPLAY set but Xvfb
@@ -542,10 +561,10 @@ def start() -> dict:
         # profile proved by argv; never reject the live browser or spawn another.
         active_profile, active_pid = _verified_running_chrome_profile(meta)
         if active_profile != profile.resolve():
-            print("TOOL_SYSTEM_CHROME_PROFILE_REUSED_FROM_ACTIVE_CDP=PASS", flush=True)
+            print("MONEY_AI_CHROME_PROFILE_REUSED_FROM_ACTIVE_CDP=PASS", flush=True)
             profile = active_profile
         else:
-            print("TOOL_SYSTEM_CHROME_PROFILE_MATCH=PASS", flush=True)
+            print("MONEY_AI_CHROME_PROFILE_MATCH=PASS", flush=True)
         meta.write_text(json.dumps({
             "profile": str(profile), "chrome_pid": active_pid,
         }), encoding="utf-8")
@@ -569,7 +588,7 @@ def start() -> dict:
 
     # Confirm the browser/CDP milestone separately. Viewer availability is a
     # different milestone and must not obscure an already-working Chrome.
-    print("TOOL_SYSTEM_CHROME_CDP=PASS", flush=True)
+    print("MONEY_AI_CHROME_CDP=PASS", flush=True)
 
     # Lightweight screen viewer for owner. Does not launch any other Chrome.
     vnc = _binary("x11vnc")
@@ -597,11 +616,11 @@ def start() -> dict:
               "screen_proxy_suffix": SCREEN_PROXY_SUFFIX,
               "remote_mobile": "NOT_VERIFIED", "profile": str(profile),
               "profile_restore": profile_restore}
-    print("TOOL_SYSTEM_SCREEN_LOCAL=PASS")
-    print("TOOL_SYSTEM_MOBILE_SCREEN=NOT_VERIFIED: must open the authenticated Kaggle port route")
-    print("TOOL_SYSTEM_SCREEN_PROXY_SUFFIX=" + SCREEN_PROXY_SUFFIX)
-    print("TOOL_SYSTEM_SCREEN_URL_TEMPLATE=https://kkb-production.jupyter-proxy.kaggle.net/k/<KERNEL_ID>/<SESSION_TOKEN>/proxy/proxy/6080/vnc.html")
-    print("TOOL_SYSTEM_SCREEN_URL_NOTE=Append SCREEN_PROXY_SUFFIX to the copied VS Code URL ending in /proxy; do not append only /6080/vnc.html")
+    print("MONEY_AI_SCREEN_LOCAL=PASS")
+    print("MONEY_AI_MOBILE_SCREEN=NOT_VERIFIED: must open the authenticated Kaggle port route")
+    print("MONEY_AI_SCREEN_PROXY_SUFFIX=" + SCREEN_PROXY_SUFFIX)
+    print("MONEY_AI_SCREEN_URL_TEMPLATE=https://kkb-production.jupyter-proxy.kaggle.net/k/<KERNEL_ID>/<SESSION_TOKEN>/proxy/proxy/6080/vnc.html")
+    print("MONEY_AI_SCREEN_URL_NOTE=Append SCREEN_PROXY_SUFFIX to the copied VS Code URL ending in /proxy; do not append only /6080/vnc.html")
     print("VNC_PASSWORD_PROMPT=DISABLED (loopback only)")
     return result
 
