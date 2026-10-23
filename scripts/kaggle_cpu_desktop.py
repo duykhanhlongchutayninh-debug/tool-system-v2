@@ -18,7 +18,7 @@ import time
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import urlopen
 
-WORKDIR = Path(os.environ.get("MONEY_AI_HOME", "/kaggle/working/money-ai"))
+WORKDIR = Path(os.environ.get("TOOL_SYSTEM_HOME", "/kaggle/working/tool-system-v2-runtime"))
 DISPLAY = ":99"
 CDP = "http://127.0.0.1:9222"
 SCREEN = "http://127.0.0.1:6080/vnc.html"
@@ -146,7 +146,7 @@ def _chrome_binary() -> str:
     # A kernel/session reset can delete Playwright browser cache while keeping
     # the Python package; restore only the required browser, not Chromium deps,
     # Xvfb, VNC, profile, GitHub updater, or Supabase setup.
-    print("MONEY_AI_CHROMIUM_MISSING: installing full Chromium once", flush=True)
+    print("TOOL_SYSTEM_CHROMIUM_MISSING: installing full Chromium once", flush=True)
     # Prefer /kaggle/working for repeated kernel runs instead of ephemeral
     # /root/.cache. This is not guaranteed durable across Kaggle sessions.
     browser_dir = WORKDIR / "playwright-browsers"
@@ -253,7 +253,7 @@ def _ensure_chromium_dependencies(chrome: str) -> None:
 
 def _profile_dir() -> Path:
     """Prioritize the original owner's actual Playwright profile; do not switch."""
-    previous = Path("/kaggle/working/money_ai_chrome_profile")
+    previous = Path("/kaggle/working/tool_system_v2_chrome_profile")
     if previous.is_dir():
         return previous
     return WORKDIR / "chrome_profile"
@@ -492,7 +492,7 @@ def _await_browser_cdp(process: subprocess.Popen, seconds: int = 40) -> None:
             return
         if process.poll() is not None:
             raise RuntimeError(
-                "CHROME_PROCESS_EXITED_EARLY: check /kaggle/working/money-ai/logs/chrome.log"
+                "CHROME_PROCESS_EXITED_EARLY: check /kaggle/working/tool-system-v2-runtime/logs/chrome.log"
             )
         time.sleep(0.2)
     raise RuntimeError(
@@ -514,22 +514,12 @@ def start() -> dict:
     # An empty Kaggle profile without cloud credentials is NOT proof there is
     # no backup: refuse a silently logged-out replacement session.
     if not _port_open(9222) and not _chromium_processes():
-        source_root = str(Path(__file__).resolve().parents[1] / "src")
-        if source_root not in sys.path:
-            sys.path.insert(0, source_root)
-        from money_ai.chrome_vault import ChromeVault, profile_initialized
-        if not profile_initialized(profile):
-            if profile.exists() and any(profile.iterdir()):
-                raise RuntimeError(
-                    "CHROME_LOCAL_PROFILE_INCOMPLETE: preserve existing files; "
-                    "do not overwrite or start a second Chrome")
-            if not os.environ.get("MONEY_AI_SUPABASE_SERVICE_ROLE_KEY"):
-                raise RuntimeError(
-                    "CHROME_VAULT_KEY_REQUIRED: activate existing Money AI Supabase "
-                    "in this Kaggle kernel before launching a fresh Chrome")
-            restored = ChromeVault().restore(profile)
-            profile_restore = "CLOUD_VERIFIED" if restored else "NO_CLOUD_BACKUP_YET"
-            print("MONEY_AI_CHROME_PROFILE_RESTORE=" + profile_restore, flush=True)
+        # Tool System V2 uses its own profile and never imports Money AI vault/secrets.
+        if profile.exists() and any(profile.iterdir()):
+            profile_restore = "LOCAL_PROFILE_REUSED"
+        else:
+            profile_restore = "FRESH_TOOL_SYSTEM_PROFILE"
+        print("TOOL_SYSTEM_CHROME_PROFILE=" + profile_restore, flush=True)
     meta = WORKDIR / "session.json"
 
     # The Jupyter kernel may have been restarted with DISPLAY set but Xvfb
