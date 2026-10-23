@@ -14,7 +14,7 @@ This port copies the Kaggle desktop/CDP launcher approach from
   verified by visually inspecting the browser; code copying is not profile restore.
 - Does not navigate to Gemini/Meta/Facebook, click provider actions, or publish.
 
-Run `python -m pip install -e .`, then in a Kaggle code cell:
+Run `python -m pip install -e .` and `python -m pip install -r requirements-runtime.txt`, then in a Kaggle code cell:
 ```python
 %cd /kaggle/working/tool-system-v2
 !python scripts/restore_one_chrome.py
