@@ -36,14 +36,15 @@ class CheckpointError(RuntimeError):
 class CloudCheckpoint:
     def __init__(self, *, service_key: str | None = None, url: str | None = None,
                  session: object | None = None) -> None:
-        self.url = (url or os.getenv("TOOL_SYSTEM_SUPABASE_URL") or PROJECT_URL).rstrip("/")
+        configured_url = (os.getenv("TOOL_SYSTEM_SUPABASE_URL") or "").strip().rstrip("/")
+        self.url = (url or configured_url or PROJECT_URL).rstrip("/")
         if not self.url:
             raise CheckpointError("TOOL_SYSTEM_SUPABASE_URL_MISSING")
-        if not self.url:
-            raise CheckpointError("TOOL_SYSTEM_SUPABASE_URL_MISSING")
-        # Wrong-project protection: never write to old money-agent-ai instance.
-        if self.url != PROJECT_URL:
+        # A per-call URL may only match the separately configured Tool System project.
+        if configured_url and self.url != configured_url:
             raise CheckpointError("WRONG_SUPABASE_PROJECT")
+        if not configured_url and url:
+            raise CheckpointError("TOOL_SYSTEM_SUPABASE_URL_NOT_CONFIGURED")
         self._key = service_key or os.getenv("TOOL_SYSTEM_SUPABASE_SERVICE_ROLE_KEY")
         if not self._key:
             raise CheckpointError("TOOL_SYSTEM_SUPABASE_SERVICE_ROLE_KEY_MISSING")
