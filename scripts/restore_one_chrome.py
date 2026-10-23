@@ -1,42 +1,36 @@
-"""Start/reuse Tool System V2's single Kaggle Chrome and verify read-only CDP attach.
+"""Attach-only verification for an already-running Kaggle Chrome.
 
-No provider automation, account actions, or publishing. This uses only a local
-Tool System V2 profile; it does not read Money AI's secrets or Supabase.
+This script NEVER starts Chrome, Xvfb, VNC, or a new profile. Run it only
+inside the same Kaggle kernel/session that already owns CDP port 9222.
 """
 from __future__ import annotations
 import os
 from pathlib import Path
-import runpy
-import subprocess
-import sys
+from playwright.sync_api import sync_playwright
 
-ROOT = Path(__file__).resolve().parents[1]
-LAUNCHER = ROOT / "scripts" / "kaggle_cpu_desktop.py"
+CDP = "http://127.0.0.1:9222"
 
 def main() -> None:
-    if not LAUNCHER.is_file():
-        raise RuntimeError("TOOL_SYSTEM_CHROME_LAUNCHER_MISSING")
-    launcher = runpy.run_path(str(LAUNCHER))
-    details = launcher["start"]()
-    if details.get("cdp") != "http://127.0.0.1:9222":
-        raise RuntimeError("TOOL_SYSTEM_CDP_ENDPOINT_UNEXPECTED")
-    env = launcher["_safe_child_env"]()
-    env["DISPLAY"] = ":99"
-    env["TOOL_SYSTEM_CDP_URL"] = "http://127.0.0.1:9222"
-    env["PYTHONPATH"] = str(ROOT / "src")
-    result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "check_shared_chrome.py")],
-        env=env, capture_output=True, text=True, timeout=35, check=False,
-    )
-    if result.returncode or "TOOL_SYSTEM_SHARED_CHROME_CDP_PASS" not in result.stdout:
-        # Do not print arbitrary browser/account content from stderr/stdout.
-        tail = "\n".join((result.stdout + "\n" + result.stderr).splitlines()[-8:])
-        raise RuntimeError("TOOL_SYSTEM_SHARED_CHROME_ATTACH_NOT_VERIFIED:\n" + tail[:1400])
-    print("TOOL_SYSTEM_SHARED_CHROME_CDP_PASS")
-    print("TOOL_SYSTEM_CHROME_REUSED=" + str(bool(details.get("reused"))))
-    print("TOOL_SYSTEM_PROFILE_PATH=" + str(details.get("profile")))
-    print("TOOL_SYSTEM_PROFILE_LOGIN=NOT_VERIFIED")
-    print("TOOL_SYSTEM_CHROME_READY")
+    if not Path("/kaggle").exists():
+        raise RuntimeError("KAGGLE_ONLY")
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.connect_over_cdp(CDP, timeout=5000)
+            try:
+                if not browser.contexts:
+                    raise RuntimeError("CDP_CONNECTED_BUT_NO_BROWSER_CONTEXT")
+                pages = browser.contexts[0].pages
+                print("TOOL_SYSTEM_SHARED_CHROME_CDP_PASS")
+                print("TOOL_SYSTEM_CHROME_REUSED=True")
+                print("TOOL_SYSTEM_PAGE_COUNT=" + str(len(pages)))
+                print("TOOL_SYSTEM_LOGIN=NOT_VERIFIED")
+            finally:
+                # Disconnect the Playwright client; do not close browser.
+                playwright.stop()
+    except Exception as exc:
+        print("TOOL_SYSTEM_SHARED_CHROME_CDP_FAIL")
+        print("REASON=" + type(exc).__name__ + ": " + str(exc))
+        raise
 
 if __name__ == "__main__":
     main()
