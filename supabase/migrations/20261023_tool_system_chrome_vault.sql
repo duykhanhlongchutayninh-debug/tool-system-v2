@@ -1,5 +1,5 @@
--- Applied to existing Tool System V2 Supabase project on 2026-10-18.
--- No new project/bucket. Profile data lives encrypted in PRIVATE money-ai-state.
+-- Apply only to the separate Tool System V2 Supabase project.
+-- The previous migration creates the private money-ai-state bucket. Profile archives are encrypted before upload.
 begin;
 create table if not exists public.money_ai_chrome_profiles (
   name text primary key check (name = 'owner'),
