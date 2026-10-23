@@ -1,36 +1,32 @@
-"""Attach-only verification for an already-running Kaggle Chrome.
+"""Create/reuse Tool System V2's single Kaggle Chrome using the ported Money AI launcher.
 
-This script NEVER starts Chrome, Xvfb, VNC, or a new profile. Run it only
-inside the same Kaggle kernel/session that already owns CDP port 9222.
+The launcher refuses to create a second browser when any Chrome process already
+exists without a known CDP endpoint. Uses a separate Tool System V2 local profile
+and does not restore Money AI cookies or read its Supabase credentials.
 """
 from __future__ import annotations
-import os
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+import runpy
 
-CDP = "http://127.0.0.1:9222"
+ROOT = Path(__file__).resolve().parents[1]
+LAUNCHER = ROOT / "scripts" / "kaggle_cpu_desktop.py"
 
 def main() -> None:
     if not Path("/kaggle").exists():
         raise RuntimeError("KAGGLE_ONLY")
-    try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.connect_over_cdp(CDP, timeout=5000)
-            try:
-                if not browser.contexts:
-                    raise RuntimeError("CDP_CONNECTED_BUT_NO_BROWSER_CONTEXT")
-                pages = browser.contexts[0].pages
-                print("TOOL_SYSTEM_SHARED_CHROME_CDP_PASS")
-                print("TOOL_SYSTEM_CHROME_REUSED=True")
-                print("TOOL_SYSTEM_PAGE_COUNT=" + str(len(pages)))
-                print("TOOL_SYSTEM_LOGIN=NOT_VERIFIED")
-            finally:
-                # Disconnect the Playwright client; do not close browser.
-                playwright.stop()
-    except Exception as exc:
-        print("TOOL_SYSTEM_SHARED_CHROME_CDP_FAIL")
-        print("REASON=" + type(exc).__name__ + ": " + str(exc))
-        raise
+    if not LAUNCHER.is_file():
+        raise RuntimeError("TOOL_SYSTEM_CHROME_LAUNCHER_MISSING")
+    launcher = runpy.run_path(str(LAUNCHER))
+    result = launcher["start"]()
+    if result.get("chrome") != "CDP_OK" or result.get("cdp") != "http://127.0.0.1:9222":
+        raise RuntimeError("TOOL_SYSTEM_CHROME_START_NOT_VERIFIED")
+    print("TOOL_SYSTEM_CHROME_CDP_PASS")
+    print("TOOL_SYSTEM_CHROME_REUSED=" + str(bool(result.get("reused"))))
+    print("TOOL_SYSTEM_PROFILE_PATH=" + str(result.get("profile")))
+    print("TOOL_SYSTEM_PROFILE_LOGIN=NOT_VERIFIED")
+    print("TOOL_SYSTEM_CHROME_READY")
+    print("TOOL_SYSTEM_NOVNC_LOCAL=" + str(result.get("screen_local")))
+    print("TOOL_SYSTEM_MOBILE_SCREEN=NOT_VERIFIED")
 
 if __name__ == "__main__":
     main()
