@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import os
 import re
+import select
+import signal
 import socket
 import subprocess
 import sys
@@ -271,29 +273,43 @@ def show_dashboard():
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
+                    start_new_session=True,
                 )
                 started = time.monotonic()
                 seen = []
-                # Workers print machine-readable status lines with flush=True.
-                # Print only those safe lines; avoid leaking source URLs, tokens or provider errors.
+                fd = proc.stdout.fileno()
+                # Use select so a silent/hung worker cannot bypass the timeout on readline().
                 while True:
-                    line = proc.stdout.readline()
-                    if line:
-                        clean = line.rstrip("\r\n")
-                        if clean.startswith("TOOL_SYSTEM_") or clean.startswith("NOVNC_") or clean.startswith("MISSING_PACKAGE:"):
-                            print(clean, flush=True)
-                            seen.append(clean)
-                            seen = seen[-80:]
-                    elif proc.poll() is not None:
-                        break
                     if time.monotonic() - started > timeout_seconds:
-                        proc.terminate()
                         try:
+                            os.killpg(proc.pid, signal.SIGTERM)
                             proc.wait(timeout=8)
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
-                            proc.wait(timeout=5)
+                        except Exception:
+                            try:
+                                os.killpg(proc.pid, signal.SIGKILL)
+                            except Exception:
+                                pass
+                            try:
+                                proc.wait(timeout=5)
+                            except Exception:
+                                pass
                         raise TimeoutError("TOOL_SYSTEM_WORKER_TIMEOUT")
+                    ready, _, _ = select.select([fd], [], [], 0.5)
+                    if ready:
+                        line = proc.stdout.readline()
+                        if line:
+                            clean = line.rstrip("\r\n")
+                            # Workers expose explicit status codes; avoid displaying arbitrary provider URLs or secrets.
+                            if clean.startswith("TOOL_SYSTEM_") or clean.startswith("NOVNC_") or clean.startswith("MISSING_PACKAGE:"):
+                                print(clean, flush=True)
+                                seen.append(clean)
+                                seen = seen[-80:]
+                    if proc.poll() is not None:
+                        for line in proc.stdout:
+                            clean = line.rstrip("\r\n")
+                            if clean.startswith("TOOL_SYSTEM_") or clean.startswith("NOVNC_") or clean.startswith("MISSING_PACKAGE:"):
+                                print(clean, flush=True)
+                        break
                 code = proc.wait(timeout=10)
                 if code == 0:
                     status_widget.value = "<b>Đã kết thúc tiến trình:</b> " + script_name + " (exit 0). Xem các dấu xác minh bên dưới."
@@ -371,7 +387,11 @@ def show_dashboard():
 
     def _backup_profile(_):
         # Explicit click is the owner approval; this can briefly stop/restart Chrome.
-        _run_command(backup_button, chrome_status, "save_chrome_profile.py", 600)
+        os.environ["TOOL_SYSTEM_CHROME_COLD_BACKUP_CONSENT"] = "1"
+        try:
+            _run_command(backup_button, chrome_status, "save_chrome_profile.py", 600)
+        finally:
+            os.environ.pop("TOOL_SYSTEM_CHROME_COLD_BACKUP_CONSENT", None)
 
     def _screen_changed(change):
         raw = str(change.get("new") or "").strip()
