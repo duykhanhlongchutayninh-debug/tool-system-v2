@@ -510,16 +510,23 @@ def start() -> dict:
     logs.mkdir(exist_ok=True)
     profile = _profile_dir()
     profile_restore = "LOCAL_PROFILE_REUSED"
-    # Restore credentials BEFORE spawning the only Chrome, never while it runs.
-    # An empty Kaggle profile without cloud credentials is NOT proof there is
-    # no backup: refuse a silently logged-out replacement session.
+    # Restore only from the separately configured Tool System V2 Supabase project.
+    # Never read Money AI's credentials or connect to its old project.
     if not _port_open(9222) and not _chromium_processes():
-        # Tool System V2 uses an independent Chrome profile and never reads Money AI secrets.
-        if profile.exists() and any(profile.iterdir()):
+        from money_ai.chrome_vault import ChromeVault, profile_initialized
+        if profile_initialized(profile):
             profile_restore = "LOCAL_PROFILE_REUSED"
         else:
-            profile_restore = "FRESH_TOOL_SYSTEM_PROFILE"
-        print("TOOL_SYSTEM_CHROME_PROFILE=" + profile_restore, flush=True)
+            if profile.exists() and any(profile.iterdir()):
+                raise RuntimeError("TOOL_SYSTEM_CHROME_PROFILE_INCOMPLETE: preserve profile; refusing overwrite")
+            project_url = os.environ.get("TOOL_SYSTEM_SUPABASE_URL", "").strip()
+            service_key = os.environ.get("TOOL_SYSTEM_SUPABASE_SERVICE_ROLE_KEY", "").strip()
+            if project_url and service_key:
+                restored = ChromeVault().restore(profile)
+                profile_restore = "CLOUD_VERIFIED" if restored else "NO_CLOUD_BACKUP_YET"
+            else:
+                profile_restore = "FRESH_PROFILE_NO_CLOUD_RESTORE"
+            print("TOOL_SYSTEM_CHROME_PROFILE_RESTORE=" + profile_restore, flush=True)
     meta = WORKDIR / "session.json"
 
     # The Jupyter kernel may have been restarted with DISPLAY set but Xvfb
