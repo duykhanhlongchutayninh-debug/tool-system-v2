@@ -7,7 +7,7 @@ name = "tool-system"
 version = "0.1.0"
 description = "Tool System V2: Kaggle Chrome infrastructure and verified Steps 05-07"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["requests>=2.31,<3", "playwright>=1.48,<2", "cryptography>=43,<48", "Pillow>=10,<13", "yt-dlp>=2024.1"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
